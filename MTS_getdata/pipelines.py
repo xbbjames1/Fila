@@ -5,6 +5,7 @@
 # Don't forget to add your pipeline to the ITEM_PIPELINES setting
 # See: http://doc.scrapy.org/en/latest/topics/item-pipeline.html
 from pymongo import MongoClient
+from MTS_getdata import selen
 import json
 
 JsonFile = []
@@ -36,7 +37,7 @@ class MTSGetdataPipeline(object):
 
     def close_spider(self, spider):
         print len(JsonFile)
-        fp = open("Meter.json","wb")
+        fp = open("MeterBonwe1.json","wb")
         fp.write(json.dumps(JsonFile))
         self.client.close()
 

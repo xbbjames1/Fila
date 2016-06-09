@@ -1,13 +1,11 @@
 # -*- coding:utf-8 -*-
-from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
-
 import scrapy
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from MTS_getdata import utiltools
 from MTS_getdata.items import MTSGetdataItem
 from MTS_getdata.utiltools import validate_attr
+from MTS_getdata import selen
 
 MAIN_PAGE = "main_page"
 PRODUCT = "product"
@@ -36,7 +34,7 @@ class MTSCrawler(scrapy.Spider):
     def parse_for_product(self, response):
         product_page = response.xpath('//ul[@class="ul"]/li[contains(@class,"column-box")]/a')
         base = 'https://world.tmall.com/item/'
-        print "Length is:", len(product_page) 
+        
         for link in product_page:
             price = link.xpath('span[starts-with(@class,"cur pro")]/text()').extract()
             url = link.xpath('@href').extract()
@@ -69,23 +67,24 @@ class MTSCrawler(scrapy.Spider):
         for i in pic:
             tmp = self.resize_pic(i, 60, self.SIZE_NUM)
             product_img.append(tmp[2::])
+            
+        # color_set = selen.single_page(response.url)
         color_set = []
-#        for i in :
-#            colors = {}
-#            colors['color'] = i+1 
-#            colors['image_url'] = product_img[0]
-#            colors['alternative_image_urls'] = product_img
-##            colors['price'] = response.meta['price']
-#            color_set.append(colors)
-#        print color_set
+        counter = 0
+        for i in product_img:
+            color = {}
+            color['color'] = str(counter)
+            color['image_url'] = i
+            color['alternative_image_urls'] = product_img
+            color['price'] = []
+        # for e in color_set:
+        #     e['alternative_image_urls'] = product_img
         item = MTSGetdataItem()
-        item['title']=response.meta['title'])
+        item['title']=response.meta['title']
         item['brand'] = 'Meters Bonwe'
         item['merchant'] = 'Tmall'
-        item['product_description'] = None
-        item['product_detail'] = detail[0]
-        
-        drive = webdriver.PhantomJS()
-        drive.get(response.url)
+        item['product_description'] = ''
+        item['product_detail'] = detail[0] 
+        item['colors'] = color_set
         
         yield item
