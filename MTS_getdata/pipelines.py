@@ -37,7 +37,7 @@ class MTSGetdataPipeline(object):
 
     def close_spider(self, spider):
         print len(JsonFile)
-        fp = open("MeterBonwe1.json","wb")
+        fp = open("NewFila.json","wb")
         fp.write(json.dumps(JsonFile))
         self.client.close()
 
