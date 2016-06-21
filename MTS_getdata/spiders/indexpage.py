@@ -1,6 +1,8 @@
 # -*- coding:utf-8 -*-
 import scrapy
+import requests
 import json
+import bs4
 from scrapy.selector import SelectorList
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -15,48 +17,64 @@ IMG = 'image'
 
 class MTSCrawler(scrapy.Spider):
     name = "MTSCrawler"
-    start_urls = ["https://fila.world.tmall.com/view_shop.htm?spm=a312a.7700824.w4011-11586646327.431.OEIgzP&type=p&search=y&newHeader_b=s_from&searcy_type=item&from=.shop.pc_2_searchbutton&scene=taobao_shop&keyword=%C5%AE&pageNo=1&tsearch=y#anchor", ]
-    
-    # default callback function ,used when Request has been created on start_url 
+    start_urls = ["https://midi.world.tmall.com/i/asynSearch.htm?_ksTS=1466028179363_287&callback=jsonp288&mid=w-14494838665-0&wid=14494838665&path=/category.htm&search=y&scene=taobao_shop&pageNo=0", ]    
+    def parse_TBD(self, response):
+#        yield scrapy.Request("", self.parse_TBD)
+#        bread_cum = response.xpath('//div[contains(@class,"httm")]/div[contains(@class,"httm2")]/div/a/@href').extract()
+#        moveon_urls = []
+#        for i in bread_cum:
+#            if i.find('category.')>-1:
+#                moveon_urls.append(i)
+#        for i in moveon_urls:
+#            tmp_url = "https:"+i
+#            print tmp_url
+#            yield scrapy.Request(tmp_url, self.parse_TBD)
+        pass
+
+
     def parse(self, response):
-        #driver = webdriver.PhantomJS(service_args=['--load-images=no'])
-        #driver.get(response.url)
-        #ele = driver.find_elements_by_xpath('//div[@class="pagination"]/a[@class="J_SearchAsync"]')
-        for i in range(4):
+        page_body = response.body
+        page_new_body = page_body[page_body.find("\"")+1:page_body.rfind("\"")] 
+        response = response.replace(body=page_new_body.decode("string_escape"))
+        page = response.xpath('//b[contains(@class,"ui-page-s-len")]/text()').extract()[0]
+        page = int(page.split(r'/')[1])
+        for i in range(page):
             srs = response.url
-            n = srs.find('pageNo')
-            new_url = srs[0:n+7]+str(i+1)+srs[n+8::]
+            new_url = srs[0:srs.rfind('=')+1]+str(i+1)
             req = scrapy.Request(new_url, self.parse_for_product)
             yield req
+            break
 
     def url_maker(self, base, p_id):
         return base+p_id+'.htm'
 
     def parse_for_product(self, response):
-        product_page = response.xpath('//div[@class="item5line1"]/dl')
 
         base = 'https://world.tmall.com/item/'
+        body_con = response.body
+        new_body = body_con[body_con.find("\"")+1:body_con.rfind("\"")] 
+        res = response.replace(body=new_body.decode("string_escape"))
+        product_page = res.xpath('//div[contains(@class,"item5line1")]/dl')
+        
         for link in product_page:
             price = link.xpath('dd[@class="detail"]/div[@class="attribute"]/div[@class="cprice-area"]/span[@class="c-price"]/text()').extract()
             url = link.xpath('@data-id').extract()
-            name = link.xpath('dt/a/img/@alt').extract()
-            if len(name)>0:
-                name_1 = name[0]
-                name_ = name_1[0:name_1.find('<')]+name_1[name_1.rfind('>')+1::]
-            else:
-                name_ = ''
-            if len(url)>0:
+            name = link.xpath('dt/a/img/@alt').extract()[0]
+            
+            try:
                 p_id = url[0]
-
+            except:
+                print "Id Not Caught Error"
+            
             tmp_url = self.url_maker(base,p_id)
-            req = scrapy.Request(tmp_url, self.parse_product)
-            # req = scrapy.Request('https://world.tmall.com/item/532999026696.htm?', self.parse_product)
+            # req = scrapy.Request(tmp_url, self.parse_product)
+            req = scrapy.Request('https://world.tmall.com/item/526012665963.htm?', self.parse_product)
             req.meta["price"] = price[0]
             req.meta["product_url"] = tmp_url
-            req.meta["title"] = name_
+            req.meta["title"] = name
             req.meta["item_id"] = p_id
             yield req
-
+            break
 
     def resize_pic(self, s):
         new_str = s
@@ -71,13 +89,30 @@ class MTSCrawler(scrapy.Spider):
     def concat_p(self, sa, sb):
         return ";"+sa+";"+sb+";"
 
-    def get_pricing(self, info_dict, Mp, s_Mp, color_iter, size_list, price):
+    def get_pricing(self, Mp, s_Mp, color_iter, size_list, price):
         color = color_iter.xpath('a/span/text()').extract()[0]
         pricing_list = []
-    
+        
+        if len(size_list) == 0:
+            PRICING = {}
+            for dex in Mp:
+                v_Mp = Mp.get(dex)
+                if v_Mp['stock']>0:
+                    PRICING['size'] = ''
+                    PRICING['in_stock'] = True
+                    PRICING['inventory'] = v_Mp['stock']
+                    PRICING['currency'] = 'CNY'
+                    PRICING['original_price'] = float(v_Mp['price'])
+                    PRICING['sale_price'] = float(price)
+                    break
+            if len(PRICING)>0:
+                pricing_list.append(PRICING)
+            else:
+                print "List Zero Error!"
+
         for i in size_list.xpath('a/span/text()').extract():
             PRICING = {}
-            tmp_str = self.concat_p(s_Mp[i],s_Mp[color])
+            tmp_str = self.concat_p(s_Mp[i], s_Mp[color])
             tmp_val = Mp.get(tmp_str)
             if tmp_val!=None:
                 PRICING['size'] = i
@@ -87,10 +122,21 @@ class MTSCrawler(scrapy.Spider):
                 PRICING['original_price'] = float(tmp_val['price'])
                 PRICING['sale_price'] = float(price)
             else:
-                PRICING = None
-                print "PRICING Might Be Empty!"
+                tmp_str_ = self.concat_p(s_Mp[color], s_Mp[i])
+                tmp_val_ = Mp.get(tmp_str_)
+                if tmp_val_ != None:
+                    PRICING['size'] = i
+                    PRICING['in_stock'] = (tmp_val_['stock']>0)
+                    PRICING['inventory'] = tmp_val_['stock']
+                    PRICING['currency'] = 'CNY'
+                    PRICING['original_price'] = float(tmp_val_['price'])
+                    PRICING['sale_price'] = float(price)
+                else:
+                    PRICING = None
+                    print "Still Might Be Empty!"
             if PRICING!=None:
                 pricing_list.append(PRICING)
+        
         return pricing_list
 
 
@@ -99,18 +145,35 @@ class MTSCrawler(scrapy.Spider):
         detail = response.xpath('//div[@class="attributes" and @id="attributes"]').extract()
         color_pics = response.xpath('//dd/ul[contains(@class,"tm-clear J_TSaleProp tb-img")]/li')
         total_list = response.xpath('//dd/ul[contains(@class,"tm-clear J_TSaleProp")]/li')
-        # size_list = response.xpath('//dd/ul[contains(@class,"tm-clear J_TSaleProp")]/li')
         json_getter = response.xpath('//div[@class="tm-clear"]/script[3]').extract()
-        
-        size_list = SelectorList()
+        extract_pic = 
+                
+        print len(extract_pic)
 
+        size_list = SelectorList()
+        
         for i in total_list:
             if i.xpath('a/span/text()').extract()[0] not in color_pics.xpath('a/span/text()').extract():
                 size_list.append(i)
-        
-        cut_line = len(total_list)-len(color_pics)
+#        cnt = 0
+#        sku_type = 0
+#        for i in total_list:
+#            cnt = cnt + 1
+#            if i.xpath('a/span/text()').extract()[0] not in color_pics.xpath('a/span/text()').extract():
+#                size_list.append(i)
+#                sku_type = cnt
+#        if sku_type > len(total_list)-len(color_pics):
+#            sku_type = 0
+#        else:
+#            sku_type = 1
+#
+#        if len(size_list)==0:
+#            sku_type = 3
+#
+        # cut_line = len(total_list)-len(color_pics)
 
         str_val_map = {}
+
         for i in range(len(total_list)):
             v = total_list[i].xpath('@data-value').extract()
             n = total_list[i].xpath('a/span/text()').extract()
@@ -133,12 +196,16 @@ class MTSCrawler(scrapy.Spider):
         for i in color_pics:
             color = {}
             color['color'] = i.xpath('@title').extract()[0]
-            tmp_str = i.xpath('a/@style').extract()[0]
-            tmp_str = tmp_str[tmp_str.find('(')+3:tmp_str.rfind(')')]
-            tmp_str = tmp_str[0:tmp_str.rfind('_')]
-            color['image_url'] = tmp_str    
+            try:
+                tmp_str = i.xpath('a/@style').extract()[0]
+                tmp_str = tmp_str[tmp_str.find('(')+3:tmp_str.rfind(')')]
+                tmp_str = tmp_str[0:tmp_str.rfind('_')]
+                color['image_url'] = tmp_str
+            except:
+                color['image_url'] = product_img[0]
+
             color['alternative_image_urls'] = product_img
-            color['pricing_list'] = self.get_pricing(info_dict, skuMap, str_val_map, i, size_list, response.meta['price'])
+            color['pricing_list'] = self.get_pricing(skuMap, str_val_map, i, size_list, response.meta['price'])
             if len(color['pricing_list'])>0:
                 color_set.append(color)
         
@@ -146,15 +213,13 @@ class MTSCrawler(scrapy.Spider):
         item['product_url'] = response.meta['product_url']
         item['item_id'] = response.meta['item_id']
         item['title'] = response.meta['title']
-        item['brand'] = 'Fila'
+        item['brand'] = 'Midi'
         item['merchant'] = 'Tmall'
         item['product_description'] = ''
-        item['product_detail'] = detail[0] 
+        item['product_detail'] = detail[0]
         item['colors'] = color_set
         item['categories'] = info_dict['itemDO']['categoryId']
         if len(item['colors'])>0:
             yield item
-
-
 
 
